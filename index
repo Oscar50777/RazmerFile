@@ -3,75 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <title>PDF Viewer</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body {
-            font-family: sans-serif;
-            padding: 20px;
-            max-width: 800px;
-            margin: auto;
-        }
-        canvas {
-            border: 1px solid #ccc;
-            width: 100%;
-            height: auto;
-            display: block;
-            margin-top: 20px;
-        }
-        .info {
-            margin-top: 20px;
-        }
-        .controls {
-            margin-bottom: 20px;
-        }
-        label {
-            font-weight: bold;
-        }
-    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script> 
 </head>
 <body>
-
-<h1>PDF Viewer с обрезным полем</h1>
-
-<div class="controls">
-    <label for="crop-margin">Размер обрезного поля:</label>
-    <select id="crop-margin">
-        <option value="2" selected>2 мм</option>
-        <option value="3">3 мм</option>
-        <option value="4">4 мм</option>
-        <option value="5">5 мм</option>
-    </select>
-</div>
 
 <h2>Загрузите PDF:</h2>
 <input type="file" id="pdf-file" accept="application/pdf">
 
-<canvas id="pdf-canvas"></canvas>
-
-<div class="info">
-    <p><strong>Размер страницы:</strong> <span id="page-size">-</span></p>
-    <p><strong>Обрезной формат:</strong> <span id="crop-size">-</span></p>
-</div>
-
-<!-- Подключаем pdf.js с CDN -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script> 
+<canvas id="pdf-canvas" style="border:1px solid #ccc;"></canvas>
 
 <script>
     const fileInput = document.getElementById('pdf-file');
     const canvas = document.getElementById('pdf-canvas');
     const context = canvas.getContext('2d');
-    const pageSizeSpan = document.getElementById('page-size');
-    const cropSizeSpan = document.getElementById('crop-size');
-    const cropMarginSelect = document.getElementById('crop-margin');
-    let cropMarginMM = parseFloat(cropMarginSelect.value);
-
-    // Обновляем значение при изменении
-    cropMarginSelect.addEventListener('change', () => {
-        cropMarginMM = parseFloat(cropMarginSelect.value);
-        if (window.currentPDF) {
-            renderPage(window.currentPDF);
-        }
-    });
 
     fileInput.addEventListener('change', async function (e) {
         const file = e.target.files[0];
@@ -81,79 +25,21 @@
         reader.onload = async function () {
             const typedarray = new Uint8Array(reader.result);
             const pdfDoc = await pdfjsLib.getDocument({ uint8Array: typedarray }).promise;
-            window.currentPDF = pdfDoc;
-            renderPage(pdfDoc);
+            const page = await pdfDoc.getPage(1);
+
+            const viewport = page.getViewport({ scale: 1.5 });
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+
+            await page.render({
+                canvasContext: context,
+                viewport: viewport
+            }).promise;
+
+            console.log("Страница загружена");
         };
         reader.readAsArrayBuffer(file);
     });
-
-    async function renderPage(pdfDoc) {
-        const page = await pdfDoc.getPage(1);
-
-        const viewport = page.getViewport({ scale: 300 / 72 }); // 300 DPI
-
-        const pageWidthPx = viewport.width;
-        const pageHeightPx = viewport.height;
-
-        canvas.width = pageWidthPx;
-        canvas.height = pageHeightPx;
-
-        // Рендерим страницу
-        await page.render({
-            canvasContext: context,
-            viewport: viewport
-        }).promise;
-
-        // Переводим размеры в мм
-        const widthMM = (pageWidthPx * 25.4) / (viewport.scale * 72);
-        const heightMM = (pageHeightPx * 25.4) / (viewport.scale * 72);
-
-        const cropWidthMM = widthMM - cropMarginMM * 2;
-        const cropHeightMM = heightMM - cropMarginMM * 2;
-
-        pageSizeSpan.textContent = `${widthMM.toFixed(1)} × ${heightMM.toFixed(1)} мм`;
-        cropSizeSpan.textContent = `${cropWidthMM.toFixed(1)} × ${cropHeightMM.toFixed(1)} мм`;
-
-        drawCropMarks(context, viewport, cropMarginMM, cropWidthMM, cropHeightMM);
-    }
-
-    function drawCropMarks(ctx, viewport, cropMarginMM, cropWidthMM, cropHeightMM) {
-        const scaleX = viewport.scale;
-        const scaleY = viewport.scale;
-
-        const innerWidthPx = (cropWidthMM * scaleX * 72) / 25.4;
-        const innerHeightPx = (cropHeightMM * scaleY * 72) / 25.4;
-
-        const marginX = (cropMarginMM * scaleX * 72) / 25.4;
-        const marginY = (cropMarginMM * scaleY * 72) / 25.4;
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Рендерим страницу заново
-        const page = window.currentPDF.getPage(1);
-        page.render({
-            canvasContext: ctx,
-            viewport: viewport
-        });
-
-        // Рисуем рамку
-        ctx.setLineDash([5, 5]);
-        ctx.strokeStyle = 'red';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(marginX, marginY, innerWidthPx, innerHeightPx);
-        ctx.setLineDash([]);
-
-        // Текст внутри
-        ctx.fillStyle = 'red';
-        ctx.font = 'bold 16px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(
-            `${Math.round(cropWidthMM)} × ${Math.round(cropHeightMM)} мм`,
-            marginX + innerWidthPx / 2,
-            marginY + innerHeightPx / 2
-        );
-    }
 </script>
 
 </body>
